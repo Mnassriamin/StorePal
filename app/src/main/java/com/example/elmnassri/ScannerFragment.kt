@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -25,7 +26,9 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import coil.load
 import com.example.elmnassri.databinding.FragmentScannerBinding
+import com.google.android.material.imageview.ShapeableImageView
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -35,12 +38,10 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import android.widget.TextView
-import coil.load
-import android.app.Dialog // Make sure this import is added
+import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import com.google.android.material.imageview.ShapeableImageView
+
 class ScannerFragment : Fragment() {
 
     private var _binding: FragmentScannerBinding? = null
@@ -55,13 +56,18 @@ class ScannerFragment : Fragment() {
     private var isScanning = true
 
     private var selectedImageUri: Uri? = null
-    private var dialog: AlertDialog? = null
+    private var dialog: Dialog? = null
+
     private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success: Boolean ->
         if (success) {
-            dialog?.findViewById<ImageView>(R.id.image_preview)?.apply {
-                setImageURI(selectedImageUri)
-                visibility = View.VISIBLE
-            }
+            updateImagePreview()
+        }
+    }
+
+    private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            selectedImageUri = it
+            updateImagePreview()
         }
     }
 
@@ -87,7 +93,6 @@ class ScannerFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
         cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
-
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
@@ -138,40 +143,31 @@ class ScannerFragment : Fragment() {
     }
 
     private fun showItemDetailsDialog(item: Item) {
-        val dialog = Dialog(requireContext())
-        dialog.setContentView(R.layout.dialog_item_details)
-
-        // THE FIX: Set the dialog to match the screen width
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        dialog.window?.attributes?.windowAnimations = R.style.DialogAnimation
-        dialog.setCancelable(true)
-
-        // Find the views in the custom layout
-        val itemImageView = dialog.findViewById<ShapeableImageView>(R.id.dialog_item_image)
-        val itemNameView = dialog.findViewById<TextView>(R.id.dialog_item_name)
-        val itemPriceView = dialog.findViewById<TextView>(R.id.dialog_item_price)
-        val doneButton = dialog.findViewById<Button>(R.id.btn_done)
-
-        // Populate the views
-        itemNameView.text = item.name
-        itemPriceView.text = "${String.format("%.2f", item.price)} TND"
-        itemImageView.load(item.imageUri) {
+        dialog = Dialog(requireContext())
+        dialog?.setContentView(R.layout.dialog_item_details)
+        dialog?.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog?.window?.attributes?.windowAnimations = R.style.DialogAnimation
+        dialog?.setCancelable(true)
+        val itemImageView = dialog?.findViewById<ShapeableImageView>(R.id.dialog_item_image)
+        val itemNameView = dialog?.findViewById<TextView>(R.id.dialog_item_name)
+        val itemPriceView = dialog?.findViewById<TextView>(R.id.dialog_item_price)
+        val doneButton = dialog?.findViewById<Button>(R.id.btn_done)
+        itemNameView?.text = item.name
+        itemPriceView?.text = "${String.format("%.2f", item.price)} TND"
+        itemImageView?.load(item.imageUri) {
             placeholder(R.drawable.ic_launcher_background)
             error(R.drawable.ic_launcher_foreground)
         }
-
-        // Set listeners
-        doneButton.setOnClickListener {
-            dialog.dismiss()
+        doneButton?.setOnClickListener {
+            dialog?.dismiss()
         }
-        dialog.setOnDismissListener {
-            isScanning = true // Allow scanning again when dialog is closed
+        dialog?.setOnDismissListener {
+            isScanning = true
         }
-
-        dialog.show()
+        dialog?.show()
     }
+
     private fun getTmpFileUri(): Uri {
         val tmpFile = File.createTempFile("tmp_image_file", ".png", requireContext().cacheDir).apply {
             createNewFile()
@@ -186,18 +182,16 @@ class ScannerFragment : Fragment() {
         val nameEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_name)
         val priceEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_price)
         val barcodeEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_barcode)
-        val takePictureButton = dialogView.findViewById<Button>(R.id.btn_select_image)
+        val addPictureButton = dialogView.findViewById<Button>(R.id.btn_select_image)
+
         barcodeEditText.setText(barcode)
         barcodeEditText.isEnabled = false
 
-        takePictureButton.setOnClickListener {
-            getTmpFileUri().let { uri ->
-                selectedImageUri = uri
-                takePictureLauncher.launch(uri)
-            }
+        addPictureButton.setOnClickListener {
+            showImageSourceDialog()
         }
 
-        dialog = AlertDialog.Builder(requireContext())
+        val builder = AlertDialog.Builder(requireContext())
             .setTitle("Add New Item")
             .setView(dialogView)
             .setPositiveButton("Save") { _, _ ->
@@ -207,9 +201,8 @@ class ScannerFragment : Fragment() {
                     val newItem = Item(
                         name = name,
                         price = price,
-                        barcode = barcode,
+                        barcode = barcode
                     )
-                    // Pass both the item and the new image to the ViewModel
                     viewModel.upsertItem(newItem, selectedImageUri)
                     findNavController().navigate(R.id.nav_storage)
                 } else {
@@ -223,8 +216,39 @@ class ScannerFragment : Fragment() {
             .setOnCancelListener {
                 isScanning = true
             }
-            .create()
+
+        dialog = builder.create()
         dialog?.show()
+    }
+
+    private fun showImageSourceDialog() {
+        val options = arrayOf("Take a photo", "Choose from gallery")
+        AlertDialog.Builder(requireContext())
+            .setTitle("Add Picture")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> { // Take a photo
+                        getTmpFileUri().let { uri ->
+                            selectedImageUri = uri
+                            takePictureLauncher.launch(uri)
+                        }
+                    }
+                    1 -> { // Choose from gallery
+                        selectImageLauncher.launch("image/*")
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun updateImagePreview() {
+        // Here, we need to handle both Dialog and AlertDialog
+        val imageView = (dialog as? AlertDialog)?.findViewById<ImageView>(R.id.image_preview)
+            ?: dialog?.findViewById<ImageView>(R.id.image_preview)
+        imageView?.apply {
+            setImageURI(selectedImageUri)
+            visibility = View.VISIBLE
+        }
     }
 
     override fun onDestroyView() {

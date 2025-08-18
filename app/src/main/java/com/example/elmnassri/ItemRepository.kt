@@ -2,23 +2,22 @@ package com.example.elmnassri
 
 import android.net.Uri
 import android.util.Log
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
+import com.cloudinary.android.MediaManager
+import com.cloudinary.android.callback.ErrorInfo
+import com.cloudinary.android.callback.UploadCallback
+import com.google.firebase.firestore.FirebaseFirestore // CORRECTED import
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class ItemRepository(private val itemDao: ItemDao) {
 
-    // Get a reference to the online Firestore database (modern way)
+    // CORRECTED: Modern Firebase initialization
     private val firestoreDb = FirebaseFirestore.getInstance()
     private val itemsCollection = firestoreDb.collection("items")
-
-    // Get a reference to Firebase Cloud Storage (modern way)
-    private val storage = FirebaseStorage.getInstance()
-    private val storageRef = storage.reference
 
     fun startRealtimeSync() {
         itemsCollection.addSnapshotListener { snapshots, e ->
@@ -45,14 +44,12 @@ class ItemRepository(private val itemDao: ItemDao) {
         var itemToSave = item
 
         if (imageUri != null) {
-            val imageRef = storageRef.child("images/${item.barcode}_${System.currentTimeMillis()}.jpg")
-            try {
-                imageRef.putFile(imageUri).await()
-                val downloadUrl = imageRef.downloadUrl.await()
-                itemToSave = item.copy(imageUri = downloadUrl.toString())
-                Log.d("Firebase", "Image uploaded successfully: $downloadUrl")
-            } catch (e: Exception) {
-                Log.e("Firebase", "Image upload failed", e)
+            val downloadUrl = uploadImageToCloudinary(imageUri)
+            if (downloadUrl != null) {
+                itemToSave = item.copy(imageUri = downloadUrl)
+                Log.d("Cloudinary", "Image uploaded successfully: $downloadUrl")
+            } else {
+                Log.e("Cloudinary", "Image upload failed")
             }
         }
 
@@ -61,7 +58,28 @@ class ItemRepository(private val itemDao: ItemDao) {
             .addOnFailureListener { e -> Log.w("Firebase", "Error writing item online", e) }
     }
 
+    private suspend fun uploadImageToCloudinary(imageUri: Uri): String? = suspendCoroutine { continuation ->
+        MediaManager.get().upload(imageUri)
+            .callback(object : UploadCallback {
+                override fun onStart(requestId: String) {
+                    Log.d("Cloudinary", "Upload started...")
+                }
+                override fun onProgress(requestId: String, bytes: Long, totalBytes: Long) {}
+                override fun onSuccess(requestId: String, resultData: Map<*, *>) {
+                    val url = resultData["secure_url"] as? String
+                    continuation.resume(url)
+                }
+                override fun onError(requestId: String, error: ErrorInfo) {
+                    Log.e("Cloudinary", "Upload error: ${error.description}")
+                    continuation.resume(null)
+                }
+                override fun onReschedule(requestId: String, error: ErrorInfo) {}
+            })
+            .dispatch()
+    }
+
     suspend fun deleteItem(item: Item) {
+        // This does not delete the image from Cloudinary, only the database record.
         itemsCollection.document(item.barcode).delete()
         itemDao.deleteItem(item)
     }

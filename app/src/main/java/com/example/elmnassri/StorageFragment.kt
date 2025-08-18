@@ -21,7 +21,6 @@ import coil.load
 import com.example.elmnassri.databinding.FragmentStorageBinding
 import kotlinx.coroutines.launch
 import java.io.File
-import com.example.elmnassri.BuildConfig
 
 class StorageFragment : Fragment() {
 
@@ -35,12 +34,18 @@ class StorageFragment : Fragment() {
     private var selectedImageUri: Uri? = null
     private var dialog: AlertDialog? = null
 
+    // Launcher for taking a new picture
     private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success: Boolean ->
         if (success) {
-            dialog?.findViewById<ImageView>(R.id.image_preview)?.apply {
-                setImageURI(selectedImageUri)
-                visibility = View.VISIBLE
-            }
+            updateImagePreview()
+        }
+    }
+
+    // Launcher for selecting an image from the gallery
+    private val selectImageLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            selectedImageUri = it
+            updateImagePreview()
         }
     }
 
@@ -54,10 +59,7 @@ class StorageFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        // Pass the click handler lambda to the adapter
         val adapter = ItemAdapter { item ->
-            // When an item is clicked, open the dialog in "edit mode"
             showAddItemDialog(item)
         }
         binding.recyclerView.adapter = adapter
@@ -70,7 +72,6 @@ class StorageFragment : Fragment() {
         }
 
         binding.fabAddItem.setOnClickListener {
-            // When FAB is clicked, open the dialog in "add mode"
             showAddItemDialog(null)
         }
     }
@@ -93,17 +94,13 @@ class StorageFragment : Fragment() {
         return FileProvider.getUriForFile(requireContext(), "${BuildConfig.APPLICATION_ID}.provider", tmpFile)
     }
 
-    // The function now accepts an optional Item to edit
-    // In StorageFragment.kt
-
     private fun showAddItemDialog(itemToEdit: Item?) {
         selectedImageUri = null
         val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_add_item, null)
-
         val nameEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_name)
         val priceEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_price)
         val barcodeEditText = dialogView.findViewById<EditText>(R.id.edit_text_item_barcode)
-        val takePictureButton = dialogView.findViewById<Button>(R.id.btn_select_image)
+        val addPictureButton = dialogView.findViewById<Button>(R.id.btn_select_image)
         val imagePreview = dialogView.findViewById<ImageView>(R.id.image_preview)
 
         val isEditMode = itemToEdit != null
@@ -114,23 +111,40 @@ class StorageFragment : Fragment() {
             priceEditText.setText(itemToEdit?.price.toString())
             barcodeEditText.setText(itemToEdit?.barcode)
             itemToEdit?.imageUri?.let {
+                // In edit mode, we use the permanent URL, not a temporary URI
                 selectedImageUri = it.toUri()
                 imagePreview.load(it)
                 imagePreview.visibility = View.VISIBLE
             }
         }
 
-        takePictureButton.setOnClickListener {
-            getTmpFileUri().let { uri ->
-                selectedImageUri = uri
-                takePictureLauncher.launch(uri)
-            }
+        addPictureButton.setOnClickListener {
+            showImageSourceDialog()
         }
 
         val builder = AlertDialog.Builder(requireContext())
             .setTitle(dialogTitle)
             .setView(dialogView)
-            .setPositiveButton("Save", null) // Set to null initially to override
+            .setPositiveButton("Save") { _, _ ->
+                val name = nameEditText.text.toString()
+                val price = priceEditText.text.toString().toDoubleOrNull()
+                val barcode = barcodeEditText.text.toString()
+
+                if (name.isNotBlank() && price != null) {
+                    val itemId = itemToEdit?.id ?: 0
+                    val updatedItem = Item(
+                        id = itemId,
+                        name = name,
+                        price = price,
+                        barcode = barcode.ifEmpty { "N/A" },
+                        imageUri = itemToEdit?.imageUri // Use existing URI if not changed
+                    )
+                    // The selectedImageUri is a temporary local URI, pass it to the ViewModel for upload
+                    viewModel.upsertItem(updatedItem, selectedImageUri)
+                } else {
+                    Toast.makeText(requireContext(), "Name and Price cannot be empty", Toast.LENGTH_SHORT).show()
+                }
+            }
             .setNegativeButton("Cancel", null)
 
         if (isEditMode) {
@@ -142,36 +156,34 @@ class StorageFragment : Fragment() {
 
         dialog = builder.create()
         dialog?.show()
+    }
 
-        // Override the "Save" button's click listener to allow for async validation
-        dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
-            val name = nameEditText.text.toString()
-            val price = priceEditText.text.toString().toDoubleOrNull()
-            val barcode = barcodeEditText.text.toString()
-
-            // The save logic is now inside a coroutine
-            lifecycleScope.launch {
-                // Don't check for existing barcode if we are in edit mode
-                if (isEditMode || viewModel.findItemByBarcode(barcode) == null) {
-                    if (name.isNotBlank() && price != null) {
-                        val itemId = itemToEdit?.id ?: 0
-                        val updatedItem = Item(
-                            id = itemId,
-                            name = name,
-                            price = price,
-                            barcode = barcode.ifEmpty { "N/A" },
-                            imageUri = selectedImageUri?.toString() ?: itemToEdit?.imageUri
-                        )
-                        viewModel.upsertItem(updatedItem, selectedImageUri)
-                        dialog?.dismiss() // Close the dialog on success
-                    } else {
-                        Toast.makeText(requireContext(), "Name and Price cannot be empty", Toast.LENGTH_SHORT).show()
+    // NEW: Function to show the choice between Camera and Gallery
+    private fun showImageSourceDialog() {
+        val options = arrayOf("Take a photo", "Choose from gallery")
+        AlertDialog.Builder(requireContext())
+            .setTitle("Add Picture")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> { // Take a photo
+                        getTmpFileUri().let { uri ->
+                            selectedImageUri = uri
+                            takePictureLauncher.launch(uri)
+                        }
                     }
-                } else {
-                    // If the item exists, show an error
-                    Toast.makeText(requireContext(), "An item with this barcode already exists", Toast.LENGTH_LONG).show()
+                    1 -> { // Choose from gallery
+                        selectImageLauncher.launch("image/*")
+                    }
                 }
             }
+            .show()
+    }
+
+    // NEW: Helper to update the preview
+    private fun updateImagePreview() {
+        dialog?.findViewById<ImageView>(R.id.image_preview)?.apply {
+            setImageURI(selectedImageUri)
+            visibility = View.VISIBLE
         }
     }
 
