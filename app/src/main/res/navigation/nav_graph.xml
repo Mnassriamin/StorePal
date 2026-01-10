@@ -12,9 +12,20 @@
         tools:layout="@layout/fragment_storage" />
 
     <fragment
+        android:id="@+id/nav_cashier"
+        android:name="com.example.elmnassri.CashierFragment"
+        android:label="Cashier"
+        tools:layout="@layout/fragment_cashier" />
+
+    <fragment
         android:id="@+id/nav_scanner"
         android:name="com.example.elmnassri.ScannerFragment"
         android:label="Scanner"
         tools:layout="@layout/fragment_scanner" />
+    <fragment
+        android:id="@+id/nav_dashboard"
+        android:name="com.example.elmnassri.DashboardFragment"
+        android:label="Dashboard"
+        tools:layout="@layout/fragment_dashboard" />
 
 </navigation>

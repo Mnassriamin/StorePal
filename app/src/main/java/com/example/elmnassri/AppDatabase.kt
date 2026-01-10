@@ -5,19 +5,26 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [Item::class], version = 1, exportSchema = false)
+// ERROR WAS HERE: You must list all 3 entities inside the brackets [ ]
+@Database(entities = [Item::class, Order::class, OrderItem::class, User::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun itemDao(): ItemDao
+    abstract fun orderDao(): OrderDao
+    abstract fun userDao(): UserDao
 
     companion object {
-        // @Volatile ensures that changes made by one thread are immediately visible to all other threads.
         @Volatile
+
+
+
+
+
+
+
         private var INSTANCE: AppDatabase? = null
 
         fun getInstance(context: Context): AppDatabase {
-            // synchronized ensures that only one thread can execute this block at a time,
-            // which prevents creating multiple database instances.
             synchronized(this) {
                 var instance = INSTANCE
 
@@ -25,8 +32,9 @@ abstract class AppDatabase : RoomDatabase() {
                     instance = Room.databaseBuilder(
                         context.applicationContext,
                         AppDatabase::class.java,
-                        "store_database" // This will be the name of your database file
-                    ).build()
+                        "store_database"
+                    ).fallbackToDestructiveMigration()
+                        .build()
                     INSTANCE = instance
                 }
                 return instance

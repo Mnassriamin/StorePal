@@ -6,8 +6,7 @@ import com.cloudinary.android.MediaManager
 class InventoryApplication : Application() {
     // Using 'lazy' so the database and repository are only created when they're needed
     val database by lazy { AppDatabase.getInstance(this) }
-    val repository by lazy { ItemRepository(database.itemDao()) }
-
+    val repository by lazy { ItemRepository(database.itemDao(), database.orderDao(), database.userDao()) }
     override fun onCreate() { // Add this whole function
         super.onCreate()
 

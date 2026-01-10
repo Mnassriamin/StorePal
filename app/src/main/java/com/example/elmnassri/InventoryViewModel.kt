@@ -53,6 +53,11 @@ class InventoryViewModelFactory(private val repository: ItemRepository) : ViewMo
             @Suppress("UNCHECKED_CAST")
             return InventoryViewModel(repository) as T
         }
+        // ADD THIS BLOCK:
+        if (modelClass.isAssignableFrom(CashierViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return CashierViewModel(repository) as T
+        }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
