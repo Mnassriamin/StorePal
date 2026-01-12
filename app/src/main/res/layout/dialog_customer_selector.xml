@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="550dp"
+    app:cardCornerRadius="24dp"
+    app:cardBackgroundColor="#FFFFFF">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Select Customer"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:textColor="#2E7D32"
+            android:layout_marginBottom="16dp"/>
+
+        <EditText
+            android:id="@+id/input_search"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:background="@drawable/bg_edit_text"
+            android:drawableStart="@android:drawable/ic_menu_search"
+            android:drawablePadding="12dp"
+            android:drawableTint="#757575"
+            android:hint="Search name..."
+            android:paddingHorizontal="16dp"
+            android:textSize="16sp"
+            android:layout_marginBottom="16dp"/>
+
+        <ListView
+            android:id="@+id/list_customers"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="@null"
+            android:dividerHeight="0dp"/>
+
+        <Button
+            android:id="@+id/btn_add_new"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="+ Add New Customer"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#D32F2F"
+            app:cornerRadius="12dp"
+            android:layout_marginTop="12dp"/>
+
+    </LinearLayout>
+</androidx.cardview.widget.CardView>

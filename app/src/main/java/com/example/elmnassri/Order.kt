@@ -11,5 +11,7 @@ data class Order(
     val timestamp: Long = System.currentTimeMillis(), // Saves the exact time of sale
 
     val totalPrice: Double = 0.0,
-    val workerName: String = "Unknown"
+    val workerName: String = "Unknown",
+    val customerId: Int? = null, // If null, it was a regular anonymous customer
+    val isKridi: Boolean = false
 )

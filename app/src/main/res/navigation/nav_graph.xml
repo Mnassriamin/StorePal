@@ -27,5 +27,10 @@
         android:name="com.example.elmnassri.DashboardFragment"
         android:label="Dashboard"
         tools:layout="@layout/fragment_dashboard" />
+    <fragment
+        android:id="@+id/navigation_kridi"
+        android:name="com.example.elmnassri.KridiFragment"
+        android:label="Kridi Management"
+        tools:layout="@layout/fragment_kridi" />
 
 </navigation>

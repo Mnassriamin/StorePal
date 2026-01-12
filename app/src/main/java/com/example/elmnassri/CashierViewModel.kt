@@ -5,30 +5,33 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
 
-    // We use OrderItem directly so it matches the Adapter
     private val _basket = MutableStateFlow<List<OrderItem>>(emptyList())
     val basket: StateFlow<List<OrderItem>> = _basket.asStateFlow()
 
     private val _totalPrice = MutableStateFlow(0.0)
     val totalPrice: StateFlow<Double> = _totalPrice.asStateFlow()
 
+    // 1. Live List of Customers for the Dialog
+    val allCustomers: StateFlow<List<Customer>> = repository.getAllCustomers()
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
     fun addItemByBarcode(barcode: String) = viewModelScope.launch {
         val currentList = _basket.value.toMutableList()
         val existingIndex = currentList.indexOfFirst { it.barcode == barcode }
 
         if (existingIndex != -1) {
-            // 1. Item exists? Increase quantity by 1
             val existingItem = currentList[existingIndex]
             currentList[existingIndex] = existingItem.copy(quantity = existingItem.quantity + 1)
             updateBasket(currentList)
         } else {
-            // 2. New item? Fetch from DB and convert to OrderItem
             val itemFromDb = repository.getItemByBarcode(barcode)
             if (itemFromDb != null) {
                 val newItem = OrderItem(
@@ -45,7 +48,6 @@ class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
         }
     }
 
-    // Manual Quantity Edit
     fun updateQuantity(item: OrderItem, newQuantity: Int) {
         val currentList = _basket.value.toMutableList()
         val index = currentList.indexOfFirst { it.barcode == item.barcode }
@@ -55,7 +57,6 @@ class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
                 currentList[index] = item.copy(quantity = newQuantity)
                 updateBasket(currentList)
             } else {
-                // If they enter 0, remove the item
                 removeItem(item)
             }
         }
@@ -71,17 +72,19 @@ class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
         updateBasket(emptyList())
     }
 
-    fun submitOrder() = viewModelScope.launch {
+    // 2. Updated Submit: Accepts optional Customer ID
+    fun submitOrder(customerId: Int? = null) = viewModelScope.launch {
         val currentItems = _basket.value
         if (currentItems.isNotEmpty()) {
             val total = _totalPrice.value
-
-            // Save to repository
-            repository.saveOrder(total, currentItems)
-
-            // Clear screen
+            repository.saveOrder(total, currentItems, customerId)
             clearBasket()
         }
+    }
+
+    // 3. Add New Customer Helper
+    fun addNewCustomer(name: String, phone: String) = viewModelScope.launch {
+        repository.addCustomer(name, phone)
     }
 
     private fun updateBasket(newList: List<OrderItem>) {
@@ -98,7 +101,6 @@ class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
     }
 }
 
-// --- THIS WAS MISSING AND CAUSED THE ERROR ---
 class CashierViewModelFactory(private val repository: ItemRepository) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(CashierViewModel::class.java)) {

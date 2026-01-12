@@ -16,4 +16,8 @@
         android:id="@+id/nav_dashboard"
         android:icon="@android:drawable/ic_menu_sort_by_size"
         android:title="Dashboard" />
+    <item
+        android:id="@+id/navigation_kridi"
+        android:icon="@drawable/ic_kridi_book"
+        android:title="Kridi" />
 </menu>
