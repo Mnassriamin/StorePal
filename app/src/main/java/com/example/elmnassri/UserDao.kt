@@ -15,15 +15,13 @@ interface UserDao {
     @Delete
     suspend fun deleteUser(user: User)
 
-    // Used for Login: Check if a user exists with this PIN
     @Query("SELECT * FROM users_table WHERE pin = :pin LIMIT 1")
     suspend fun getUserByPin(pin: String): User?
 
-    // Used for your Admin Dashboard: List all workers
-    @Query("SELECT * FROM users_table")
-    fun getAllUsers(): Flow<List<User>>
-
-    // Helper to see if DB is empty (to create the first Admin account automatically)
     @Query("SELECT COUNT(*) FROM users_table")
     suspend fun getUserCount(): Int
+
+    // NEW: Get all users to display in the list
+    @Query("SELECT * FROM users_table ORDER BY role ASC, name ASC")
+    fun getAllUsers(): Flow<List<User>>
 }

@@ -99,6 +99,7 @@ class CashierViewModel(private val repository: ItemRepository) : ViewModel() {
         }
         _totalPrice.value = sum
     }
+    fun searchItems(query: String) = repository.getItems(query)
 }
 
 class CashierViewModelFactory(private val repository: ItemRepository) : ViewModelProvider.Factory {

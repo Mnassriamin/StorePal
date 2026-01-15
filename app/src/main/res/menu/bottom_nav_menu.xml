@@ -1,23 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
+
     <item
         android:id="@+id/nav_storage"
         android:icon="@android:drawable/ic_menu_save"
         android:title="Storage" />
+
     <item
         android:id="@+id/nav_cashier"
         android:icon="@android:drawable/ic_menu_my_calendar"
         android:title="Cashier" />
-    <item
-        android:id="@+id/nav_scanner"
-        android:icon="@android:drawable/ic_menu_camera"
-        android:title="Scanner" />
-    <item
-        android:id="@+id/nav_dashboard"
-        android:icon="@android:drawable/ic_menu_sort_by_size"
-        android:title="Dashboard" />
+
     <item
         android:id="@+id/navigation_kridi"
         android:icon="@drawable/ic_kridi_book"
         android:title="Kridi" />
+
+    <item
+        android:id="@+id/navigation_menu"
+        android:icon="@android:drawable/ic_menu_more"
+        android:title="Menu" />
+
 </menu>

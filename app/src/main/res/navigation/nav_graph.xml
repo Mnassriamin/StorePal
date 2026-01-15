@@ -18,19 +18,33 @@
         tools:layout="@layout/fragment_cashier" />
 
     <fragment
+        android:id="@+id/navigation_kridi"
+        android:name="com.example.elmnassri.KridiFragment"
+        android:label="Kridi Management"
+        tools:layout="@layout/fragment_kridi" />
+
+    <dialog
+        android:id="@+id/navigation_menu"
+        android:name="com.example.elmnassri.MenuFragment"
+        android:label="Menu"
+        tools:layout="@layout/fragment_menu" />
+
+    <fragment
         android:id="@+id/nav_scanner"
         android:name="com.example.elmnassri.ScannerFragment"
         android:label="Scanner"
         tools:layout="@layout/fragment_scanner" />
+
     <fragment
         android:id="@+id/nav_dashboard"
         android:name="com.example.elmnassri.DashboardFragment"
         android:label="Dashboard"
         tools:layout="@layout/fragment_dashboard" />
+
     <fragment
-        android:id="@+id/navigation_kridi"
-        android:name="com.example.elmnassri.KridiFragment"
-        android:label="Kridi Management"
-        tools:layout="@layout/fragment_kridi" />
+        android:id="@+id/navigation_staff"
+        android:name="com.example.elmnassri.WorkerFragment"
+        android:label="Staff Management"
+        tools:layout="@layout/fragment_worker_management" />
 
 </navigation>

@@ -2,8 +2,12 @@ package com.example.elmnassri
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -14,6 +18,7 @@ import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ListView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -67,6 +72,7 @@ class CashierFragment : Fragment() {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastScanTime > SCAN_DELAY_MS) {
                         lastScanTime = currentTime
+                        // Optional: Add haptic feedback here
                         viewModel.addItemByBarcode(it.text)
                     }
                 }
@@ -105,7 +111,6 @@ class CashierFragment : Fragment() {
         }
 
         // --- FIX: WAKE UP THE CUSTOMER LIST ---
-        // This ensures the list is loaded from DB even before you click the button
         lifecycleScope.launch {
             viewModel.allCustomers.collect {
                 // Do nothing, just keeping the connection alive
@@ -121,9 +126,77 @@ class CashierFragment : Fragment() {
         binding.btnKridi.setOnClickListener {
             showCustomerSelector()
         }
+
+        // Manual Item Search Button
+        view.findViewById<View>(R.id.btn_manual_search).setOnClickListener {
+            showItemSearchDialog()
+        }
     }
 
-    // --- SEARCH / SELECTOR LOGIC ---
+    // --- MANUAL ITEM SEARCH DIALOG ---
+    private fun showItemSearchDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_search_item, null)
+        val inputSearch = view.findViewById<EditText>(R.id.input_item_search)
+        val listView = view.findViewById<ListView>(R.id.list_search_results)
+
+        val dialog = AlertDialog.Builder(context)
+            .setView(view)
+            .create()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        // Setup Item Adapter (Name + Price)
+        val adapter = object : ArrayAdapter<Item>(requireContext(), android.R.layout.simple_list_item_2, android.R.id.text1) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val row = super.getView(position, convertView, parent)
+                val item = getItem(position)
+
+                val text1 = row.findViewById<TextView>(android.R.id.text1)
+                val text2 = row.findViewById<TextView>(android.R.id.text2)
+
+                text1.text = item?.name
+                text1.textSize = 18f
+                text1.setTypeface(null, android.graphics.Typeface.BOLD)
+
+                text2.text = String.format("%.2f TND", item?.price)
+                text2.setTextColor(Color.parseColor("#2E7D32")) // Dark Green Price
+
+                return row
+            }
+        }
+        listView.adapter = adapter
+
+        // Live Search Logic
+        inputSearch.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val query = s.toString()
+                lifecycleScope.launch {
+                    // Make sure 'searchItems' exists in ViewModel, or use repository.getItems(query)
+                    viewModel.searchItems(query).collect { items ->
+                        adapter.clear()
+                        adapter.addAll(items)
+                    }
+                }
+            }
+        })
+
+        // Add Clicked Item to Cart
+        listView.setOnItemClickListener { _, _, position, _ ->
+            val selectedItem = adapter.getItem(position)
+            if (selectedItem != null) {
+                viewModel.addItemByBarcode(selectedItem.barcode)
+                Toast.makeText(context, "${selectedItem.name} added", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }
+        }
+
+        dialog.show()
+        inputSearch.requestFocus()
+    }
+
+    // --- CUSTOMER SELECTOR ---
     private fun showCustomerSelector() {
         val allCustomers = viewModel.allCustomers.value
 
@@ -138,22 +211,17 @@ class CashierFragment : Fragment() {
 
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
 
-        // --- 1. THE FANCY ADAPTER ---
         var displayedList = allCustomers.toMutableList()
 
         val adapter = object : ArrayAdapter<Customer>(requireContext(), R.layout.item_customer_selector_row, displayedList) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                // Inflate our new "Fancy" layout
                 val row = convertView ?: layoutInflater.inflate(R.layout.item_customer_selector_row, parent, false)
                 val customer = getItem(position)!!
 
-                val nameText = row.findViewById<android.widget.TextView>(R.id.text_name)
-                val avatarText = row.findViewById<android.widget.TextView>(R.id.text_avatar)
+                val nameText = row.findViewById<TextView>(R.id.text_name)
+                val avatarText = row.findViewById<TextView>(R.id.text_avatar)
 
-                // Set Name (Big and Dark)
                 nameText.text = customer.name
-
-                // Set Avatar (First letter of name)
                 val initial = if (customer.name.isNotEmpty()) customer.name.first().uppercase() else "?"
                 avatarText.text = initial
 
@@ -162,21 +230,18 @@ class CashierFragment : Fragment() {
         }
         listView.adapter = adapter
 
-        // --- 2. CLICK LISTENER ---
         listView.setOnItemClickListener { _, _, position, _ ->
-            val selectedCustomer = adapter.getItem(position)!! // Get from adapter to be safe with filtering
+            val selectedCustomer = adapter.getItem(position)!!
             viewModel.submitOrder(selectedCustomer.id)
             Toast.makeText(context, "Added to ${selectedCustomer.name}'s Tab", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
         }
 
-        // --- 3. ADD NEW BUTTON ---
         btnAddNew.setOnClickListener {
             dialog.dismiss()
             showAddCustomerDialog()
         }
 
-        // --- 4. SEARCH FILTERING ---
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun afterTextChanged(s: Editable?) {}
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -198,7 +263,7 @@ class CashierFragment : Fragment() {
         dialog.show()
     }
 
-    // --- ADD CUSTOMER DIALOG ---
+    // --- ADD CUSTOMER ---
     private fun showAddCustomerDialog() {
         val view = layoutInflater.inflate(R.layout.dialog_add_customer, null)
         val inputName = view.findViewById<EditText>(R.id.input_name)
@@ -219,7 +284,6 @@ class CashierFragment : Fragment() {
                 viewModel.addNewCustomer(name, phone)
                 Toast.makeText(context, "Customer Created!", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
-                // Small delay to allow DB update before showing selector again
                 view.postDelayed({
                     showCustomerSelector()
                 }, 300)
@@ -230,18 +294,17 @@ class CashierFragment : Fragment() {
         dialog.show()
     }
 
+    // --- QUANTITY DIALOG ---
     private fun showQuantityDialog(item: OrderItem) {
         val view = layoutInflater.inflate(R.layout.dialog_quantity, null)
 
-        val textName = view.findViewById<android.widget.TextView>(R.id.text_item_name)
+        val textName = view.findViewById<TextView>(R.id.text_item_name)
         val inputQty = view.findViewById<EditText>(R.id.input_quantity)
         val btnSave = view.findViewById<Button>(R.id.btn_save)
         val btnCancel = view.findViewById<Button>(R.id.btn_cancel)
 
         textName.text = "Update Quantity: ${item.itemName}"
         inputQty.setText(item.quantity.toString())
-
-        // Select all text so they can just type over it instantly
         inputQty.selectAll()
 
         val dialog = AlertDialog.Builder(context)
@@ -269,6 +332,7 @@ class CashierFragment : Fragment() {
 
         dialog.show()
     }
+
     override fun onResume() {
         super.onResume()
         binding.embeddedScanner.resume()

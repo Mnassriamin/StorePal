@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+import kotlin.text.set
 
 class ItemRepository(
     private val itemDao: ItemDao,
@@ -29,26 +30,51 @@ class ItemRepository(
 
     // --- REALTIME SYNC ---
     fun startRealtimeSync() {
-        // 1. Items
+        // 1. ITEMS (The Fix for Duplicates)
         itemsCollection.addSnapshotListener { snapshots, e ->
             if (e != null) return@addSnapshotListener
             CoroutineScope(Dispatchers.IO).launch {
                 for (doc in snapshots!!.documents) {
                     try {
-                        val item = doc.toObject(Item::class.java)
-                        item?.let { itemDao.upsertItem(it) }
-                    } catch (e: Exception) { Log.e("SYNC", "Item sync error", e) }
+                        val remoteItem = doc.toObject(Item::class.java)
+                        if (remoteItem != null && remoteItem.barcode.isNotEmpty()) {
+                            // STOP DUPLICATES: Check if we have this barcode locally
+                            val localItem = itemDao.getItemByBarcode(remoteItem.barcode)
+
+                            if (localItem != null) {
+                                // Exists! Force the remote item to use our LOCAL ID so it updates instead of adding new
+                                val itemToUpdate = remoteItem.copy(id = localItem.id)
+                                itemDao.upsertItem(itemToUpdate)
+                            } else {
+                                // New item! Insert normally
+                                itemDao.upsertItem(remoteItem)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SYNC", "Item sync error: ${e.message}")
+                    }
                 }
             }
         }
 
-        // 2. Users
+        // 2. USERS (Staff) - FIXED DUPLICATES
         usersCollection.addSnapshotListener { snapshots, e ->
             if (e != null) return@addSnapshotListener
             CoroutineScope(Dispatchers.IO).launch {
                 for (doc in snapshots!!.documents) {
-                    val user = doc.toObject(User::class.java)
-                    user?.let { userDao.insertUser(it) }
+                    val remoteUser = doc.toObject(User::class.java)
+                    if (remoteUser != null) {
+                        // FIX: Check if we already have a user with this PIN
+                        val localUser = userDao.getUserByPin(remoteUser.pin)
+
+                        if (localUser != null) {
+                            val userToUpdate = remoteUser.copy(id = localUser.id)
+                            userDao.insertUser(userToUpdate)
+                        } else {
+                            // New User! Insert normally.
+                            userDao.insertUser(remoteUser)
+                        }
+                    }
                 }
             }
         }
@@ -93,7 +119,8 @@ class ItemRepository(
                         if (localCustomer != null) {
                             val updated = localCustomer.copy(
                                 totalDebt = remoteCustomer.totalDebt,
-                                phoneNumber = remoteCustomer.phoneNumber
+                                phoneNumber = remoteCustomer.phoneNumber,
+                                id = localCustomer.id // Preserve Local ID
                             )
                             customerDao.updateCustomer(updated)
                         } else {
@@ -104,18 +131,15 @@ class ItemRepository(
             }
         }
 
-        // 5. Credit Logs (FIXED DUPLICATES)
+        // 5. Credit Logs
         creditLogsCollection.addSnapshotListener { snapshots, e ->
             if (e != null) return@addSnapshotListener
             CoroutineScope(Dispatchers.IO).launch {
                 for (doc in snapshots!!.documents) {
                     val remoteLog = doc.toObject(CreditLog::class.java)
                     if (remoteLog != null) {
-                        // Check if we already have this log locally
                         val exists = customerDao.getCreditLogByDetails(remoteLog.customerId, remoteLog.timestamp) != null
-
                         if (!exists) {
-                            // Insert it. Important: Set ID to 0 so Room generates a fresh local ID
                             customerDao.insertCreditLog(remoteLog.copy(id = 0))
                         }
                     }
@@ -123,8 +147,57 @@ class ItemRepository(
             }
         }
     }
+// --- WORKER MANAGEMENT ---
 
-    // --- REST OF CODE (Standard) ---
+    fun getAllUsers(): Flow<List<User>> = userDao.getAllUsers()
+
+    suspend fun addWorker(name: String, pin: String, role: String) {
+        val newUser = User(name = name, pin = pin, role = role)
+        // 1. Save Local
+        userDao.insertUser(newUser)
+        // 2. Save Cloud (Using PIN as ID to ensure uniqueness in login)
+        usersCollection.document(pin).set(newUser)
+    }
+
+    suspend fun deleteWorker(user: User) {
+        // 1. Delete Local
+        userDao.deleteUser(user)
+        // 2. Delete Cloud
+        usersCollection.document(user.pin).delete()
+    }
+    // --- ITEM ACTIONS (Updated with Duplicate Check) ---
+
+    suspend fun upsertItem(item: Item, imageUri: Uri?) {
+        var itemToSave = item
+
+        // 1. Upload Image (Optional)
+        if (imageUri != null) {
+            try {
+                val downloadUrl = uploadImageToCloudinary(imageUri)
+                if (downloadUrl != null) itemToSave = item.copy(imageUri = downloadUrl)
+            } catch (e: Exception) {
+                Log.e("REPO", "Image upload failed", e)
+            }
+        }
+
+        // 2. CHECK LOCAL EXISTENCE
+        // Even if we are adding "new", check if the barcode exists locally first.
+        // If it does, grab its ID so we UPDATE instead of INSERT.
+        val existingItem = itemDao.getItemByBarcode(itemToSave.barcode)
+        if (existingItem != null) {
+            itemToSave = itemToSave.copy(id = existingItem.id)
+        }
+
+        // 3. Save Local
+        itemDao.upsertItem(itemToSave)
+
+        // 4. Save Cloud (Document ID = Barcode)
+        itemsCollection.document(itemToSave.barcode).set(itemToSave)
+            .addOnFailureListener { Log.e("REPO", "Cloud sync failed", it) }
+    }
+
+    // --- STANDARD FUNCTIONS (No changes below) ---
+
     suspend fun login(pin: String): User? = userDao.getUserByPin(pin)
 
     suspend fun createDefaultAdmin() {
@@ -202,15 +275,6 @@ class ItemRepository(
 
     fun getItems(searchQuery: String): Flow<List<Item>> = itemDao.getItems(searchQuery)
 
-    suspend fun upsertItem(item: Item, imageUri: Uri?) {
-        var itemToSave = item
-        if (imageUri != null) {
-            val downloadUrl = uploadImageToCloudinary(imageUri)
-            if (downloadUrl != null) itemToSave = item.copy(imageUri = downloadUrl)
-        }
-        itemsCollection.document(itemToSave.barcode).set(itemToSave)
-    }
-
     private suspend fun uploadImageToCloudinary(imageUri: Uri): String? = suspendCoroutine { continuation ->
         MediaManager.get().upload(imageUri).callback(object : UploadCallback {
             override fun onStart(requestId: String) {}
@@ -234,3 +298,5 @@ class ItemRepository(
     fun getAllOrders(): Flow<List<Order>> = orderDao.getAllOrders()
     fun getOrdersByDate(startDate: Long, endDate: Long): Flow<List<Order>> = orderDao.getOrdersByDateRange(startDate, endDate)
 }
+
+

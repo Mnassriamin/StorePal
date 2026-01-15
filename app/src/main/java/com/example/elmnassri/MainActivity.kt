@@ -1,5 +1,6 @@
 package com.example.elmnassri
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.fragment.NavHostFragment
@@ -12,28 +13,28 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 1. SECURITY: If no user is logged in, kick them back to Login
+        if (UserSession.currentUser == null) {
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // 2. SETUP NAVIGATION
+        // Note: Make sure the ID matches your XML (nav_host_fragment or nav_host_fragment_activity_main)
+        // Based on your code, it seems to be nav_host_fragment
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
 
-        // Setup the bottom navigation
+        // 3. LINK BOTTOM BAR
+        // This automatically handles clicks for Storage, Cashier, Kridi, and Menu
         binding.bottomNavView.setupWithNavController(navController)
 
-        // --- ROLE CHECK ---
-        // If the logged-in user is NOT an admin, hide the Dashboard tab.
-        if (!UserSession.isAdmin()) {
-            val menu = binding.bottomNavView.menu
-            val dashboardItem = menu.findItem(R.id.nav_dashboard)
-            dashboardItem.isVisible = false
 
-            // Also, make sure the app doesn't start on the Dashboard screen
-            // (Start on Scanner instead)
-            val graph = navController.navInflater.inflate(R.navigation.nav_graph)
-            graph.setStartDestination(R.id.nav_scanner)
-            navController.graph = graph
-        }
     }
 }
